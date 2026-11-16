@@ -156,6 +156,15 @@
   .card .name { font-size: 27px; font-weight: 800; letter-spacing: -.03em; line-height: 1; display: flex; align-items: center; gap: 6px; }
   .card .notes { font-size: 12px; color: var(--muted); margin-top: 6px; min-height: 15px; white-space: nowrap; }
   .known-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); flex: none; }
+  .card { position: relative; }
+  .alt {
+    padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .03em;
+    border: 1px solid var(--border); background: var(--card); color: var(--muted); transition: .15s;
+  }
+  .alt:hover { color: var(--ink); border-color: var(--accent); }
+  .alt.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .card .alt { position: absolute; left: 16px; bottom: 9px; }
+  .flash .alt { margin-top: 12px; font-size: 12px; padding: 5px 12px; }
   .card .g { flex: none; width: 92px; }
   .card .p { flex: 1; min-width: 0; }
   body.single .card { justify-content: space-between; }
@@ -250,19 +259,21 @@ const CHORDS = [
   ['B',  'B D# F#',    'xx4442'], ['Bm', 'B D F#',  'xx4432'], ['B7', 'B D# F# A',  'x21202'],
   ['C',  'C E G',      'x32010'], ['Cm', 'C Eb G',  'xx5543'], ['C7', 'C E G Bb',   'x32310'],
   ['D',  'D F# A',     'xx0232'], ['Dm', 'D F A',   'xx0231'], ['D7', 'D F# A C',   'xx0212'],
-  ['E',  'E G# B',     '022100'], ['Em', 'E G B',   '022000'], ['E7', 'E G# B D',   '020100'],
-  ['F',  'F A C',      'xx3211'], ['Fm', 'F Ab C',  'x33111'], ['F7', 'F A C Eb',   '131211'],
+  ['E',  'E G# B',     '022100'], ['Em', 'E G B',   '022000'], ['E7', 'E G# B D',   '020100', { shape: '022130' }],
+  ['F',  'F A C',      'xx3211', { shape: '133211', barre: [1, 0, 5] }], ['Fm', 'F Ab C',  'x33111'], ['F7', 'F A C Eb',   '131211'],
   ['G',  'G B D',      '320003'], ['Gm', 'G Bb D',  'x55333'], ['G7', 'G B D F',    '320001'],
-].map(([name, notes, shape]) => {
+].map(([name, notes, shape, alt]) => {
   const names = notes.split(' ');
   // Piano: root position, ascending from the root inside the C3–B4 keyboard.
   const PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   const pc = n => (PC[n[0]] + (n[1] === '#' ? 1 : n[1] === 'b' ? -1 : 0) + 12) % 12;
   let last = 47;
   const midis = names.map(n => { let m = 48 + pc(n); while (m <= last) m += 12; last = m; return m; });
-  return { name, notes, names, shape, midis };
+  return { name, notes, names, shape, alt, midis };
 });
 const OPEN = [40, 45, 50, 55, 59, 64]; // E2 A2 D3 G3 B3 E4
+// The guitar fingering currently selected for a chord (standard or alt).
+const gtr = i => (CHORDS[i].alt && S.alt.has(i)) ? CHORDS[i].alt : { shape: CHORDS[i].shape };
 
 /* =====================================================================
    State (persisted)
@@ -279,12 +290,14 @@ const S = {
   shuffle: store.get('shuffle', false),
   skipKnown: store.get('skipKnown', false),
   known: new Set(store.get('known', [])),
+  alt: new Set(store.get('alt', [])),   // chords switched to their alternative guitar fingering
   peeked: new Set(),      // overview cards revealed while fingering is hidden
   deck: [], pos: 0, revealed: false,
 };
 const save = () => {
   for (const k of ['view', 'guitar', 'piano', 'show', 'shuffle', 'skipKnown']) store.set(k, S[k]);
   store.set('known', [...S.known]);
+  store.set('alt', [...S.alt]);
 };
 
 /* =====================================================================
@@ -332,13 +345,13 @@ function pluck(m) {
   for (let i = 0; i < fade; i++) d[len - 1 - i] *= i / fade;
   return (pluckCache[m] = { buf, rate: f * (N + 0.5) / sr });
 }
-function playGuitar(ch) {
+function playGuitar(g) {
   const c = audio(), out = newVoice(), t0 = c.currentTime + 0.02;
   const body = c.createBiquadFilter(); body.type = 'lowpass'; body.frequency.value = 4200; body.Q.value = 0.4;
   const warm = c.createBiquadFilter(); warm.type = 'peaking'; warm.frequency.value = 210; warm.Q.value = 0.9; warm.gain.value = 4;
   body.connect(warm); warm.connect(out);
   let k = 0;
-  [...ch.shape].forEach((fr, i) => {
+  [...g.shape].forEach((fr, i) => {
     if (fr === 'x') return;
     const { buf, rate } = pluck(OPEN[i] + Number(fr));
     const s = c.createBufferSource(); s.buffer = buf; s.playbackRate.value = rate;
@@ -374,13 +387,17 @@ function playPiano(ch) {
 /* =====================================================================
    Diagrams (SVG)
    ===================================================================== */
-function guitarSVG(ch, show) {
+function guitarSVG(g, show) {
   const X = i => 18 + i * 16.8, top = 30, fh = 22;
   let s = `<svg class="gtr" viewBox="0 0 120 146" aria-hidden="true">`;
   for (let f = 1; f <= 5; f++) s += `<line class="ln" x1="18" x2="102" y1="${top + f * fh}" y2="${top + f * fh}"/>`;
   for (let i = 0; i < 6; i++) s += `<line class="ln" x1="${X(i)}" x2="${X(i)}" y1="${top}" y2="${top + 5 * fh}"/>`;
   s += `<line class="nut" x1="18" x2="102" y1="${top}" y2="${top}"/>`;
-  if (show) [...ch.shape].forEach((fr, i) => {
+  if (show && g.barre) {
+    const [fr, a, b] = g.barre;
+    s += `<rect class="dot" x="${X(a) - 6.8}" y="${top + (fr - 0.5) * fh - 6.8}" width="${X(b) - X(a) + 13.6}" height="13.6" rx="6.8"/>`;
+  }
+  if (show) [...g.shape].forEach((fr, i) => {
     const x = X(i);
     if (fr === 'x') s += `<path class="mute" d="M${x - 4.5} 9.5l9 9M${x + 4.5} 9.5l-9 9"/>`;
     else if (fr === '0') s += `<circle class="open" cx="${x}" cy="14" r="5"/>`;
@@ -413,6 +430,11 @@ function pianoSVG(ch, show, labels) {
 const app = document.getElementById('app');
 const $ = id => document.getElementById(id);
 
+function altBtn(i, label) {
+  if (!S.guitar || !CHORDS[i].alt) return '';
+  const on = S.alt.has(i);
+  return `<button class="alt${on ? ' on' : ''}" data-alt="${i}" aria-pressed="${on}" title="Switch between the standard and the alternative guitar fingering">${label}</button>`;
+}
 function cardInner(i) {
   const ch = CHORDS[i], show = S.show || S.peeked.has(i);
   return `
@@ -420,8 +442,9 @@ function cardInner(i) {
       <span class="name">${ch.name}${S.known.has(i) ? '<i class="known-dot" title="Marked as known"></i>' : ''}</span>
       <span class="notes">${show ? ch.notes : ''}</span>
     </button>
-    ${S.guitar ? `<button class="play g" data-play="guitar" aria-label="Play ${ch.name} on guitar">${guitarSVG(ch, show)}</button>` : ''}
-    ${S.piano ? `<button class="play p" data-play="piano" aria-label="Play ${ch.name} on piano">${pianoSVG(ch, show, false)}</button>` : ''}`;
+    ${S.guitar ? `<button class="play g" data-play="guitar" aria-label="Play ${ch.name} on guitar">${guitarSVG(gtr(i), show)}</button>` : ''}
+    ${S.piano ? `<button class="play p" data-play="piano" aria-label="Play ${ch.name} on piano">${pianoSVG(ch, show, false)}</button>` : ''}
+    ${altBtn(i, 'Alt')}`;
 }
 function renderAll() {
   const both = S.guitar && S.piano;
@@ -460,8 +483,9 @@ function renderTrainer() {
         <div class="badge">${S.known.has(i) ? '● Known' : ''}</div>
         <div class="name">${ch.name}</div>
         <div class="notes">${show ? ch.notes : '· · ·'}</div>
+        ${altBtn(i, 'Alt guitar fingering')}
         <div class="diagrams">
-          ${S.guitar ? `<button class="play g" data-play="guitar" aria-label="Play ${ch.name} on guitar">${guitarSVG(ch, show)}<span class="cap">Guitar · tap to play</span></button>` : ''}
+          ${S.guitar ? `<button class="play g" data-play="guitar" aria-label="Play ${ch.name} on guitar">${guitarSVG(gtr(i), show)}<span class="cap">Guitar · tap to play</span></button>` : ''}
           ${S.piano ? `<button class="play p" data-play="piano" aria-label="Play ${ch.name} on piano">${pianoSVG(ch, show, true)}<span class="cap">Piano · tap to play</span></button>` : ''}
         </div>
       </div>
@@ -497,7 +521,7 @@ function play(i, which, scope) {
   if (which === 'auto') which = S.guitar ? 'guitar' : 'piano';
   if (which === 'guitar' && !S.guitar) which = 'piano';
   if (which === 'piano' && !S.piano) which = 'guitar';
-  (which === 'guitar' ? playGuitar : playPiano)(CHORDS[i]);
+  which === 'guitar' ? playGuitar(gtr(i)) : playPiano(CHORDS[i]);
   const el = scope && scope.querySelector(`[data-play="${which}"]`);
   if (el) { el.classList.remove('hit'); void el.offsetWidth; el.classList.add('hit'); }
 }
@@ -519,6 +543,14 @@ function mark(known) {
 function toggleReveal() { if (!S.show) { S.revealed = !S.revealed; render(); } }
 
 app.addEventListener('click', e => {
+  const a = e.target.closest('[data-alt]');
+  if (a) {
+    const i = Number(a.dataset.alt);
+    S.alt.has(i) ? S.alt.delete(i) : S.alt.add(i);
+    render();
+    if (S.show || S.revealed || S.peeked.has(i)) play(i, 'guitar', app.querySelector(`[data-i="${i}"]`));
+    return;
+  }
   const p = e.target.closest('[data-play]');
   if (p) {
     const host = p.closest('[data-i]'), i = Number(host.dataset.i), which = p.dataset.play;
