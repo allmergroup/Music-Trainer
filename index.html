@@ -1,0 +1,573 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chord Trainer</title>
+<script>
+  // Apply the saved theme before first paint (falls back to the system setting).
+  (function () {
+    var t = null;
+    try { t = localStorage.getItem('ct.theme'); } catch (e) {}
+    if (!t) t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    document.documentElement.dataset.theme = t;
+  })();
+</script>
+<style>
+  :root {
+    --bg: #f5f4ef;
+    --card: #ffffff;
+    --ink: #1c2130;
+    --muted: #6b7183;
+    --border: #e4e2da;
+    --hover: #f1efe8;
+    --line: #2a3040;
+    --accent: #e8702a;
+    --accent-deep: #b4500f;
+    --accent-soft: #fdebdd;
+    --key-w: #ffffff;
+    --key-b: #1c2130;
+    --key-line: #1c2130;
+    --good: #1f9d63;
+    --shadow: 0 1px 2px rgba(28, 33, 48, .05), 0 8px 24px rgba(28, 33, 48, .06);
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1116;
+    --card: #191c24;
+    --ink: #eceef3;
+    --muted: #9299ab;
+    --border: #2a2e3a;
+    --hover: #222631;
+    --line: #c9cdd8;
+    --accent: #f5803a;
+    --accent-deep: #c75c17;
+    --accent-soft: #3a2415;
+    --key-w: #ecebe5;
+    --key-b: #14161c;
+    --key-line: #14161c;
+    --good: #3ccf8a;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .25);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    transition: background .25s, color .25s;
+  }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  button:focus-visible, label:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ---------- Top bar ---------- */
+  header {
+    position: sticky; top: 0; z-index: 10;
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--border);
+  }
+  .bar {
+    max-width: 1280px; margin: 0 auto; padding: 12px 20px;
+    display: flex; align-items: center; gap: 12px 18px; flex-wrap: wrap;
+  }
+  .brand { display: flex; align-items: baseline; gap: 10px; margin-right: auto; }
+  .brand h1 { font-size: 19px; font-weight: 800; letter-spacing: -.02em; margin: 0; }
+  .brand h1 span { color: var(--accent); }
+  .brand small { color: var(--muted); font-size: 13px; }
+
+  .seg { display: inline-flex; padding: 3px; border-radius: 12px; background: var(--hover); border: 1px solid var(--border); }
+  .seg button { padding: 7px 14px; border-radius: 9px; font-size: 14px; font-weight: 600; color: var(--muted); transition: .15s; }
+  .seg button[aria-pressed="true"] { background: var(--card); color: var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
+
+  .chip {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 7px 13px; border-radius: 999px; font-size: 14px; font-weight: 600;
+    border: 1px solid var(--border); background: var(--card); color: var(--muted);
+    cursor: pointer; user-select: none; transition: .15s;
+  }
+  .chip input { position: absolute; opacity: 0; pointer-events: none; }
+  .chip .box {
+    width: 15px; height: 15px; border-radius: 5px; border: 1.5px solid var(--muted);
+    display: grid; place-items: center; transition: .15s;
+  }
+  .chip .box svg { width: 10px; height: 10px; opacity: 0; }
+  .chip.on { color: var(--ink); border-color: var(--accent); background: var(--accent-soft); }
+  .chip.on .box { background: var(--accent); border-color: var(--accent); }
+  .chip.on .box svg { opacity: 1; }
+  .chips { display: inline-flex; gap: 8px; }
+
+  .switch { display: inline-flex; align-items: center; gap: 9px; font-size: 14px; font-weight: 600; cursor: pointer; user-select: none; }
+  .switch input { position: absolute; opacity: 0; pointer-events: none; }
+  .switch .track { width: 38px; height: 22px; border-radius: 999px; background: var(--border); position: relative; transition: .2s; }
+  .switch .track::after {
+    content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px;
+    border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .3); transition: .2s;
+  }
+  .switch input:checked + .track { background: var(--accent); }
+  .switch input:checked + .track::after { transform: translateX(16px); }
+
+  .icon-btn {
+    width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center;
+    border: 1px solid var(--border); background: var(--card); transition: .15s;
+  }
+  .icon-btn:hover { background: var(--hover); }
+  .icon-btn svg { width: 18px; height: 18px; }
+  [data-theme="dark"] .sun, [data-theme="light"] .moon { display: none; }
+
+  main { max-width: 1280px; margin: 0 auto; padding: 22px 20px 60px; }
+  .hint { color: var(--muted); font-size: 14px; margin: 0 0 16px; }
+  kbd {
+    font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+    padding: 2px 6px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--ink);
+  }
+
+  /* ---------- Diagrams ---------- */
+  svg.gtr, svg.pno { display: block; width: 100%; height: auto; }
+  .gtr .ln { stroke: var(--line); stroke-width: 1; }
+  .gtr .nut { stroke: var(--line); stroke-width: 3.5; stroke-linecap: round; }
+  .gtr .dot { fill: var(--accent); }
+  .gtr .open { fill: none; stroke: var(--line); stroke-width: 1.5; }
+  .gtr .mute { stroke: var(--line); stroke-width: 1.5; stroke-linecap: round; }
+  .pno .wk { fill: var(--key-w); stroke: var(--key-line); stroke-width: 1; }
+  .pno .bk { fill: var(--key-b); stroke: var(--key-line); stroke-width: 1; }
+  .pno .wk.on { fill: var(--accent); }
+  .pno .bk.on { fill: var(--accent-deep); }
+  .pno text { font-size: 6.5px; font-weight: 700; fill: #fff; text-anchor: middle; pointer-events: none; }
+
+  .play { border-radius: 12px; padding: 8px; transition: background .15s, transform .15s; }
+  .play:hover { background: var(--hover); }
+  .play:active { transform: scale(.97); }
+  .play.hit { animation: hit .55s ease-out; }
+  @keyframes hit {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); background: var(--accent-soft); }
+    100% { box-shadow: 0 0 0 14px transparent; }
+  }
+
+  /* ---------- Overview grid ---------- */
+  .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .card {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 18px;
+    padding: 8px 10px; box-shadow: var(--shadow);
+  }
+  .card .meta { flex: none; width: 74px; text-align: left; align-self: stretch; display: flex; flex-direction: column; justify-content: center; }
+  .card .name { font-size: 27px; font-weight: 800; letter-spacing: -.03em; line-height: 1; display: flex; align-items: center; gap: 6px; }
+  .card .notes { font-size: 12px; color: var(--muted); margin-top: 6px; min-height: 15px; white-space: nowrap; }
+  .known-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); flex: none; }
+  .card .g { flex: none; width: 92px; }
+  .card .p { flex: 1; min-width: 0; }
+  body.single .card { justify-content: space-between; }
+  body.single .card .g { width: 112px; }
+  @media (max-width: 1020px) { body:not(.single) .grid { grid-template-columns: 1fr; } }
+  @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+
+  /* ---------- Trainer ---------- */
+  .trainer { max-width: 780px; margin: 0 auto; }
+  .progress { display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--muted); font-weight: 600; margin-bottom: 14px; }
+  .progress .rail { flex: 1; height: 6px; border-radius: 999px; background: var(--border); overflow: hidden; }
+  .progress .fill { height: 100%; background: var(--accent); border-radius: 999px; transition: width .25s; }
+  .flash {
+    background: var(--card); border: 1px solid var(--border); border-radius: 26px; box-shadow: var(--shadow);
+    padding: 30px 26px 26px; text-align: center;
+  }
+  .flash .name { font-size: 104px; font-weight: 800; letter-spacing: -.05em; line-height: 1; }
+  .flash .notes { font-size: 20px; color: var(--muted); margin-top: 8px; letter-spacing: .08em; min-height: 26px; font-weight: 600; }
+  .flash .badge {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700;
+    color: var(--good); margin-bottom: 10px; height: 16px;
+  }
+  .flash .diagrams { display: flex; align-items: center; justify-content: center; gap: 18px; flex-wrap: wrap; margin-top: 18px; }
+  .flash .g { width: 190px; }
+  .flash .p { width: min(100%, 440px); }
+  .flash .cap { display: block; margin-top: 8px; font-size: 12px; font-weight: 600; color: var(--muted); }
+  .controls { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+  .btn {
+    padding: 11px 18px; border-radius: 13px; font-weight: 700; font-size: 15px;
+    border: 1px solid var(--border); background: var(--card); transition: .15s;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .btn:hover { background: var(--hover); }
+  .btn:active { transform: scale(.97); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { filter: brightness(1.06); }
+  .btn.good { color: var(--good); }
+  .btn kbd { font-size: 11px; opacity: .8; }
+  .btn.primary kbd { background: rgba(255, 255, 255, .2); border-color: transparent; color: #fff; }
+  .opts { display: flex; justify-content: center; align-items: center; gap: 20px; flex-wrap: wrap; margin-top: 22px; color: var(--muted); }
+  .opts .switch { font-weight: 500; }
+  .link { color: var(--muted); font-size: 14px; text-decoration: underline; text-underline-offset: 3px; }
+  .link:hover { color: var(--ink); }
+  .empty { padding: 50px 10px; }
+  .empty h2 { font-size: 30px; margin: 0 0 8px; letter-spacing: -.02em; }
+  .empty p { color: var(--muted); margin: 0 0 20px; }
+  @media (max-width: 560px) {
+    .flash .name { font-size: 76px; }
+    .brand small { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="bar">
+    <div class="brand">
+      <h1>Chord<span>Trainer</span></h1>
+      <small>21 basic chords</small>
+    </div>
+
+    <div class="seg" role="group" aria-label="View">
+      <button id="vAll" aria-pressed="true">All chords</button>
+      <button id="vTrain" aria-pressed="false">Trainer</button>
+    </div>
+
+    <div class="chips" role="group" aria-label="Instruments">
+      <label class="chip" id="chipG"><input type="checkbox" id="cbG"><span class="box"><svg viewBox="0 0 10 10"><path d="M1.5 5.2l2.3 2.3 4.7-5" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Guitar</label>
+      <label class="chip" id="chipP"><input type="checkbox" id="cbP"><span class="box"><svg viewBox="0 0 10 10"><path d="M1.5 5.2l2.3 2.3 4.7-5" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Piano</label>
+    </div>
+
+    <label class="switch" title="Show or hide the exact strings / keys">
+      <input type="checkbox" id="cbShow"><span class="track"></span>Fingering
+    </label>
+
+    <button class="icon-btn" id="themeBtn" aria-label="Toggle light / dark mode" title="Light / dark">
+      <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+      <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
+    </button>
+  </div>
+</header>
+
+<main id="app"></main>
+
+<script>
+/* =====================================================================
+   Data — the 21 chords from "Basic Piano Cords.pdf"
+   shape = guitar frets per string, low E → high e ("x" = don't play)
+   ===================================================================== */
+const CHORDS = [
+  ['A',  'A C# E',     'x02220'], ['Am', 'A C E',   'x02210'], ['A7', 'A C# E G',   'x02020'],
+  ['B',  'B D# F#',    'xx4442'], ['Bm', 'B D F#',  'xx4432'], ['B7', 'B D# F# A',  'x21202'],
+  ['C',  'C E G',      'x32010'], ['Cm', 'C Eb G',  'xx5543'], ['C7', 'C E G Bb',   'x32310'],
+  ['D',  'D F# A',     'xx0232'], ['Dm', 'D F A',   'xx0231'], ['D7', 'D F# A C',   'xx0212'],
+  ['E',  'E G# B',     '022100'], ['Em', 'E G B',   '022000'], ['E7', 'E G# B D',   '020100'],
+  ['F',  'F A C',      'xx3211'], ['Fm', 'F Ab C',  'x33111'], ['F7', 'F A C Eb',   '131211'],
+  ['G',  'G B D',      '320003'], ['Gm', 'G Bb D',  'x55333'], ['G7', 'G B D F',    '320001'],
+].map(([name, notes, shape]) => {
+  const names = notes.split(' ');
+  // Piano: root position, ascending from the root inside the C3–B4 keyboard.
+  const PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+  const pc = n => (PC[n[0]] + (n[1] === '#' ? 1 : n[1] === 'b' ? -1 : 0) + 12) % 12;
+  let last = 47;
+  const midis = names.map(n => { let m = 48 + pc(n); while (m <= last) m += 12; last = m; return m; });
+  return { name, notes, names, shape, midis };
+});
+const OPEN = [40, 45, 50, 55, 59, 64]; // E2 A2 D3 G3 B3 E4
+
+/* =====================================================================
+   State (persisted)
+   ===================================================================== */
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('ct.' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem('ct.' + k, JSON.stringify(v)); } catch (e) {} },
+};
+const S = {
+  view: store.get('view', 'all'),
+  guitar: store.get('guitar', true),
+  piano: store.get('piano', true),
+  show: store.get('show', true),
+  shuffle: store.get('shuffle', false),
+  skipKnown: store.get('skipKnown', false),
+  known: new Set(store.get('known', [])),
+  peeked: new Set(),      // overview cards revealed while fingering is hidden
+  deck: [], pos: 0, revealed: false,
+};
+const save = () => {
+  for (const k of ['view', 'guitar', 'piano', 'show', 'shuffle', 'skipKnown']) store.set(k, S[k]);
+  store.set('known', [...S.known]);
+};
+
+/* =====================================================================
+   Sound — synthesised, no samples needed
+   ===================================================================== */
+let ctx, master, voice, pianoWave;
+const pluckCache = {};
+const hz = m => 440 * Math.pow(2, (m - 69) / 12);
+
+function audio() {
+  if (!ctx) {
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -16; comp.ratio.value = 4; comp.attack.value = 0.004; comp.release.value = 0.25;
+    master = ctx.createGain(); master.gain.value = 0.9;
+    master.connect(comp); comp.connect(ctx.destination);
+  }
+  if (ctx.state === 'suspended') ctx.resume();
+  return ctx;
+}
+// Each new chord gets its own bus; the previous one is faded out quickly.
+function newVoice() {
+  const c = audio();
+  if (voice) {
+    const v = voice;
+    v.gain.cancelScheduledValues(c.currentTime);
+    v.gain.setTargetAtTime(0, c.currentTime, 0.04);
+    setTimeout(() => v.disconnect(), 500);
+  }
+  voice = c.createGain(); voice.connect(master);
+  return voice;
+}
+// Karplus–Strong plucked string, rendered once per pitch.
+function pluck(m) {
+  if (pluckCache[m]) return pluckCache[m];
+  const sr = ctx.sampleRate, f = hz(m), N = Math.round(sr / f), len = Math.floor(sr * 3.2);
+  const buf = ctx.createBuffer(1, len, sr), d = buf.getChannelData(0);
+  let lp = 0, mean = 0;
+  for (let i = 0; i < N; i++) { lp = lp * 0.5 + (Math.random() * 2 - 1) * 0.5; d[i] = lp; mean += lp; }
+  mean /= N;
+  for (let i = 0; i < N; i++) d[i] -= mean;
+  d[N] = d[0];
+  for (let i = N + 1; i < len; i++) d[i] = 0.4983 * (d[i - N] + d[i - N - 1]);
+  const fade = Math.floor(sr * 0.1);
+  for (let i = 0; i < fade; i++) d[len - 1 - i] *= i / fade;
+  return (pluckCache[m] = { buf, rate: f * (N + 0.5) / sr });
+}
+function playGuitar(ch) {
+  const c = audio(), out = newVoice(), t0 = c.currentTime + 0.02;
+  const body = c.createBiquadFilter(); body.type = 'lowpass'; body.frequency.value = 4200; body.Q.value = 0.4;
+  const warm = c.createBiquadFilter(); warm.type = 'peaking'; warm.frequency.value = 210; warm.Q.value = 0.9; warm.gain.value = 4;
+  body.connect(warm); warm.connect(out);
+  let k = 0;
+  [...ch.shape].forEach((fr, i) => {
+    if (fr === 'x') return;
+    const { buf, rate } = pluck(OPEN[i] + Number(fr));
+    const s = c.createBufferSource(); s.buffer = buf; s.playbackRate.value = rate;
+    const g = c.createGain(), t = t0 + k++ * 0.034; // downstroke, low → high
+    g.gain.setValueAtTime(0.42, t); g.gain.setTargetAtTime(0, t + 1.5, 0.6);
+    s.connect(g); g.connect(body); s.start(t);
+  });
+}
+function playPiano(ch) {
+  const c = audio(), out = newVoice(), t = c.currentTime + 0.02;
+  if (!pianoWave) {
+    const amps = [0, 1, .52, .3, .17, .1, .07, .045, .03, .02, .012, .008];
+    pianoWave = c.createPeriodicWave(new Float32Array(amps.length), new Float32Array(amps));
+  }
+  ch.midis.forEach(m => {
+    const f = hz(m), g = c.createGain(), lp = c.createBiquadFilter();
+    lp.type = 'lowpass'; lp.Q.value = 0.3;
+    lp.frequency.setValueAtTime(Math.min(9000, f * 14), t);
+    lp.frequency.exponentialRampToValueAtTime(f * 2.4, t + 1.3);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.2, t + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.085, t + 0.35);
+    g.gain.exponentialRampToValueAtTime(0.0006, t + 3.2);
+    for (const det of [-4, 4]) {
+      const o = c.createOscillator(); o.setPeriodicWave(pianoWave);
+      o.frequency.value = f; o.detune.value = det;
+      o.connect(lp); o.start(t); o.stop(t + 3.3);
+    }
+    lp.connect(g); g.connect(out);
+  });
+}
+
+/* =====================================================================
+   Diagrams (SVG)
+   ===================================================================== */
+function guitarSVG(ch, show) {
+  const X = i => 18 + i * 16.8, top = 30, fh = 22;
+  let s = `<svg class="gtr" viewBox="0 0 120 146" aria-hidden="true">`;
+  for (let f = 1; f <= 5; f++) s += `<line class="ln" x1="18" x2="102" y1="${top + f * fh}" y2="${top + f * fh}"/>`;
+  for (let i = 0; i < 6; i++) s += `<line class="ln" x1="${X(i)}" x2="${X(i)}" y1="${top}" y2="${top + 5 * fh}"/>`;
+  s += `<line class="nut" x1="18" x2="102" y1="${top}" y2="${top}"/>`;
+  if (show) [...ch.shape].forEach((fr, i) => {
+    const x = X(i);
+    if (fr === 'x') s += `<path class="mute" d="M${x - 4.5} 9.5l9 9M${x + 4.5} 9.5l-9 9"/>`;
+    else if (fr === '0') s += `<circle class="open" cx="${x}" cy="14" r="5"/>`;
+    else s += `<circle class="dot" cx="${x}" cy="${top + (fr - 0.5) * fh}" r="6.8"/>`;
+  });
+  return s + `</svg>`;
+}
+function pianoSVG(ch, show, labels) {
+  const W = 16, H = 72, WHITE = [0, 2, 4, 5, 7, 9, 11], BLACK = { 1: 1, 3: 2, 6: 4, 8: 5, 10: 6 };
+  const on = new Map(show ? ch.midis.map((m, i) => [m, ch.names[i]]) : []);
+  let whites = '', blacks = '', text = '';
+  for (let m = 48; m < 72; m++) {
+    const oct = Math.floor((m - 48) / 12), pc = m % 12, hit = on.has(m);
+    if (pc in BLACK) {
+      const x = (oct * 7 + BLACK[pc]) * W - 4.8;
+      blacks += `<rect class="bk${hit ? ' on' : ''}" x="${x}" y="0.5" width="9.6" height="45" rx="1"/>`;
+      if (hit && labels) text += `<text x="${x + 4.8}" y="40">${on.get(m)}</text>`;
+    } else {
+      const x = (oct * 7 + WHITE.indexOf(pc)) * W;
+      whites += `<rect class="wk${hit ? ' on' : ''}" x="${x + 0.5}" y="0.5" width="${W}" height="${H}" rx="1.5"/>`;
+      if (hit && labels) text += `<text x="${x + 8.5}" y="66">${on.get(m)}</text>`;
+    }
+  }
+  return `<svg class="pno" viewBox="0 0 225 73" aria-hidden="true">${whites}${blacks}${text}</svg>`;
+}
+
+/* =====================================================================
+   Views
+   ===================================================================== */
+const app = document.getElementById('app');
+const $ = id => document.getElementById(id);
+
+function cardInner(i) {
+  const ch = CHORDS[i], show = S.show || S.peeked.has(i);
+  return `
+    <button class="play meta" data-play="auto" aria-label="Play ${ch.name}">
+      <span class="name">${ch.name}${S.known.has(i) ? '<i class="known-dot" title="Marked as known"></i>' : ''}</span>
+      <span class="notes">${show ? ch.notes : ''}</span>
+    </button>
+    ${S.guitar ? `<button class="play g" data-play="guitar" aria-label="Play ${ch.name} on guitar">${guitarSVG(ch, show)}</button>` : ''}
+    ${S.piano ? `<button class="play p" data-play="piano" aria-label="Play ${ch.name} on piano">${pianoSVG(ch, show, false)}</button>` : ''}`;
+}
+function renderAll() {
+  const both = S.guitar && S.piano;
+  app.innerHTML = `
+    <p class="hint">${both ? 'Click a fretboard to hear the guitar, a keyboard to hear the piano.' : 'Click a chord to hear it.'}
+      ${S.show ? '' : ' Fingering is hidden — click a chord to hear it and check yourself.'}</p>
+    <div class="grid">${CHORDS.map((_, i) => `<div class="card" data-i="${i}">${cardInner(i)}</div>`).join('')}</div>`;
+}
+
+function buildDeck(keep) {
+  let d = CHORDS.map((_, i) => i).filter(i => !(S.skipKnown && S.known.has(i)));
+  if (S.shuffle) for (let i = d.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [d[i], d[j]] = [d[j], d[i]]; }
+  S.deck = d;
+  const at = d.indexOf(keep);
+  S.pos = at >= 0 ? at : Math.min(S.pos, Math.max(0, d.length - 1));
+}
+function renderTrainer() {
+  const n = S.deck.length;
+  const opts = `
+    <div class="opts">
+      <label class="switch"><input type="checkbox" id="cbShuffle" ${S.shuffle ? 'checked' : ''}><span class="track"></span>Shuffle</label>
+      <label class="switch"><input type="checkbox" id="cbSkip" ${S.skipKnown ? 'checked' : ''}><span class="track"></span>Skip known</label>
+      <span>${S.known.size} / ${CHORDS.length} known</span>
+      ${S.known.size ? '<button class="link" id="resetKnown">Reset</button>' : ''}
+    </div>`;
+  if (!n) {
+    app.innerHTML = `<div class="trainer"><div class="flash empty"><h2>All ${CHORDS.length} chords known</h2>
+      <p>Nothing left in the deck. Reset your progress or turn off “Skip known” to keep practising.</p></div>${opts}</div>`;
+    return;
+  }
+  const i = S.deck[S.pos], ch = CHORDS[i], show = S.show || S.revealed;
+  app.innerHTML = `
+    <div class="trainer">
+      <div class="progress"><span>${S.pos + 1} / ${n}</span><div class="rail"><div class="fill" style="width:${(S.pos + 1) / n * 100}%"></div></div></div>
+      <div class="flash" data-i="${i}">
+        <div class="badge">${S.known.has(i) ? '● Known' : ''}</div>
+        <div class="name">${ch.name}</div>
+        <div class="notes">${show ? ch.notes : '· · ·'}</div>
+        <div class="diagrams">
+          ${S.guitar ? `<button class="play g" data-play="guitar" aria-label="Play ${ch.name} on guitar">${guitarSVG(ch, show)}<span class="cap">Guitar · tap to play</span></button>` : ''}
+          ${S.piano ? `<button class="play p" data-play="piano" aria-label="Play ${ch.name} on piano">${pianoSVG(ch, show, true)}<span class="cap">Piano · tap to play</span></button>` : ''}
+        </div>
+      </div>
+      <div class="controls">
+        <button class="btn" id="prev" aria-label="Previous chord">← <kbd>←</kbd></button>
+        ${S.show ? '' : `<button class="btn primary" id="reveal">${S.revealed ? 'Hide' : 'Reveal'} <kbd>Space</kbd></button>`}
+        <button class="btn" id="again">Still learning <kbd>1</kbd></button>
+        <button class="btn good" id="know">Know it <kbd>2</kbd></button>
+        <button class="btn" id="next" aria-label="Next chord"><kbd>→</kbd> →</button>
+      </div>
+      ${opts}
+      <p class="hint" style="text-align:center;margin-top:18px">${S.show
+        ? 'Turn off <b>Fingering</b> in the top bar to quiz yourself.'
+        : 'Picture the chord, then reveal to check.'} &nbsp; <kbd>G</kbd> guitar &nbsp; <kbd>P</kbd> piano</p>
+    </div>`;
+}
+
+function render() {
+  document.body.classList.toggle('single', !(S.guitar && S.piano));
+  $('vAll').setAttribute('aria-pressed', S.view === 'all');
+  $('vTrain').setAttribute('aria-pressed', S.view === 'train');
+  $('cbG').checked = S.guitar; $('chipG').classList.toggle('on', S.guitar);
+  $('cbP').checked = S.piano; $('chipP').classList.toggle('on', S.piano);
+  $('cbShow').checked = S.show;
+  S.view === 'all' ? renderAll() : renderTrainer();
+  save();
+}
+
+/* =====================================================================
+   Actions
+   ===================================================================== */
+function play(i, which, scope) {
+  if (which === 'auto') which = S.guitar ? 'guitar' : 'piano';
+  if (which === 'guitar' && !S.guitar) which = 'piano';
+  if (which === 'piano' && !S.piano) which = 'guitar';
+  (which === 'guitar' ? playGuitar : playPiano)(CHORDS[i]);
+  const el = scope && scope.querySelector(`[data-play="${which}"]`);
+  if (el) { el.classList.remove('hit'); void el.offsetWidth; el.classList.add('hit'); }
+}
+function go(step) {
+  if (!S.deck.length) return;
+  S.pos = (S.pos + step + S.deck.length) % S.deck.length;
+  S.revealed = false; render();
+}
+function mark(known) {
+  if (!S.deck.length) return;
+  const i = S.deck[S.pos];
+  known ? S.known.add(i) : S.known.delete(i);
+  if (known && S.skipKnown) {
+    S.deck.splice(S.pos, 1);
+    if (S.pos >= S.deck.length) S.pos = 0;
+    S.revealed = false; render();
+  } else go(1);
+}
+function toggleReveal() { if (!S.show) { S.revealed = !S.revealed; render(); } }
+
+app.addEventListener('click', e => {
+  const p = e.target.closest('[data-play]');
+  if (p) {
+    const host = p.closest('[data-i]'), i = Number(host.dataset.i), which = p.dataset.play;
+    if (S.view === 'all' && !S.show && !S.peeked.has(i)) { S.peeked.add(i); host.innerHTML = cardInner(i); }
+    play(i, which, host);
+    return;
+  }
+  const id = e.target.closest('button')?.id;
+  if (id === 'prev') go(-1);
+  else if (id === 'next') go(1);
+  else if (id === 'reveal') toggleReveal();
+  else if (id === 'again') mark(false);
+  else if (id === 'know') mark(true);
+  else if (id === 'resetKnown') { S.known.clear(); buildDeck(S.deck[S.pos]); render(); }
+});
+app.addEventListener('change', e => {
+  const cur = S.deck[S.pos];
+  if (e.target.id === 'cbShuffle') { S.shuffle = e.target.checked; buildDeck(cur); S.revealed = false; render(); }
+  if (e.target.id === 'cbSkip') { S.skipKnown = e.target.checked; buildDeck(cur); S.revealed = false; render(); }
+});
+
+$('vAll').onclick = () => { S.view = 'all'; render(); };
+$('vTrain').onclick = () => { S.view = 'train'; S.revealed = false; buildDeck(S.deck[S.pos]); render(); };
+// At least one instrument always stays on: unchecking the last one switches to the other.
+$('cbG').onchange = e => { S.guitar = e.target.checked; if (!S.guitar) S.piano = true; render(); };
+$('cbP').onchange = e => { S.piano = e.target.checked; if (!S.piano) S.guitar = true; render(); };
+$('cbShow').onchange = e => { S.show = e.target.checked; S.peeked.clear(); S.revealed = false; render(); };
+$('themeBtn').onclick = () => {
+  const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = t;
+  try { localStorage.setItem('ct.theme', t); } catch (e) {}
+};
+
+document.addEventListener('keydown', e => {
+  if (S.view !== 'train' || e.metaKey || e.ctrlKey || e.altKey) return;
+  const host = app.querySelector('.flash[data-i]'), k = e.key.toLowerCase();
+  if (k === 'arrowright') go(1);
+  else if (k === 'arrowleft') go(-1);
+  else if (k === ' ') toggleReveal();
+  else if (k === '1') mark(false);
+  else if (k === '2') mark(true);
+  else if (k === 'g' && host && S.guitar) play(Number(host.dataset.i), 'guitar', host);
+  else if (k === 'p' && host && S.piano) play(Number(host.dataset.i), 'piano', host);
+  else return;
+  e.preventDefault();
+});
+
+buildDeck();
+render();
+</script>
+</body>
+</html>
