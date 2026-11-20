@@ -169,8 +169,31 @@
   .card .p { flex: 1; min-width: 0; }
   body.single .card { justify-content: space-between; }
   body.single .card .g { width: 112px; }
-  @media (max-width: 1020px) { body:not(.single) .grid { grid-template-columns: 1fr; } }
-  @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+  .alias { font-style: normal; font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: 0; }
+  .alias::before { content: "= "; opacity: .6; }
+  .gtr .fr { fill: var(--muted); font-size: 10px; font-weight: 700; }
+  .dg { display: contents; }
+
+  /* Expanded set: five cards per row, each stacked (name above, diagrams below) */
+  .grid.five { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+  .grid.five .card { flex-direction: column; align-items: stretch; gap: 2px; padding: 10px 10px 12px; }
+  .grid.five .card .meta { width: auto; align-self: stretch; align-items: flex-start; justify-content: flex-start; }
+  .grid.five .card .name { font-size: 24px; flex-wrap: wrap; row-gap: 2px; }
+  .grid.five .dg { display: flex; align-items: center; gap: 6px; }
+  .grid.five .card .g { width: 64px; }
+  .grid.five .card .p { flex: 1; min-width: 0; }
+  .grid.five .card .alt { position: static; align-self: flex-start; margin: 4px 0 0 8px; }
+  body.single .grid.five .card .g { width: 84px; margin: 0 auto; }
+  body.single .grid.five .card .p { flex: 1; }
+  @media (max-width: 1240px) {
+    .grid.five { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .grid.five .card .g { width: 84px; }
+    body.single .grid.five .card .g { width: 100px; }
+  }
+  @media (max-width: 760px) { .grid.five { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 470px) { .grid.five { grid-template-columns: 1fr; } }
+  @media (max-width: 1020px) { body:not(.single) .grid:not(.five) { grid-template-columns: 1fr; } }
+  @media (max-width: 640px) { .grid:not(.five) { grid-template-columns: 1fr; } }
 
   /* ---------- Trainer ---------- */
   .trainer { max-width: 780px; margin: 0 auto; }
@@ -182,6 +205,7 @@
     padding: 30px 26px 26px; text-align: center;
   }
   .flash .name { font-size: 104px; font-weight: 800; letter-spacing: -.05em; line-height: 1; }
+  .flash .aka { font-size: 14px; font-weight: 600; color: var(--muted); margin-top: 6px; }
   .flash .notes { font-size: 20px; color: var(--muted); margin-top: 8px; letter-spacing: .08em; min-height: 26px; font-weight: 600; }
   .flash .badge {
     display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700;
@@ -223,12 +247,17 @@
   <div class="bar">
     <div class="brand">
       <h1>Chord<span>Trainer</span></h1>
-      <small>21 basic chords</small>
+      <small id="brandSub">21 basic chords</small>
     </div>
 
     <div class="seg" role="group" aria-label="View">
       <button id="vAll" aria-pressed="true">All chords</button>
       <button id="vTrain" aria-pressed="false">Trainer</button>
+    </div>
+
+    <div class="seg" role="group" aria-label="Chord set">
+      <button id="sBasic" aria-pressed="true">Basic 21</button>
+      <button id="sAll" aria-pressed="false">Expanded</button>
     </div>
 
     <div class="chips" role="group" aria-label="Instruments">
@@ -251,29 +280,81 @@
 
 <script>
 /* =====================================================================
-   Data — the 21 chords from "Basic Piano Cords.pdf"
+   Data — the 21 chords from "Basic Piano Cords.pdf" plus the full set:
+   major · minor · 7 · maj7 · m7 in all 12 keys
    shape = guitar frets per string, low E → high e ("x" = don't play)
    ===================================================================== */
-const CHORDS = [
-  ['A',  'A C# E',     'x02220'], ['Am', 'A C E',   'x02210'], ['A7', 'A C# E G',   'x02020'],
-  ['B',  'B D# F#',    'xx4442'], ['Bm', 'B D F#',  'xx4432'], ['B7', 'B D# F# A',  'x21202'],
-  ['C',  'C E G',      'x32010'], ['Cm', 'C Eb G',  'xx5543'], ['C7', 'C E G Bb',   'x32310'],
-  ['D',  'D F# A',     'xx0232'], ['Dm', 'D F A',   'xx0231'], ['D7', 'D F# A C',   'xx0212'],
-  ['E',  'E G# B',     '022100'], ['Em', 'E G B',   '022000'], ['E7', 'E G# B D',   '020100', { shape: '022130' }],
-  ['F',  'F A C',      'xx3211', { shape: '133211', barre: [1, 0, 5] }], ['Fm', 'F Ab C',  'x33111'], ['F7', 'F A C Eb',   '131211'],
-  ['G',  'G B D',      '320003'], ['Gm', 'G Bb D',  'x55333'], ['G7', 'G B D F',    '320001'],
-].map(([name, notes, shape, alt]) => {
-  const names = notes.split(' ');
+const ROOTS = ['A', 'Bb', 'B', 'C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab']; // chromatic, starting on A
+const TYPES = [  // iv = [semitones, scale degree] — degree keeps the note spelling correct
+  { id: 'maj',  suffix: '',     iv: [[0, 1], [4, 3], [7, 5]] },
+  { id: 'min',  suffix: 'm',    iv: [[0, 1], [3, 3], [7, 5]] },
+  { id: 'dom7', suffix: '7',    iv: [[0, 1], [4, 3], [7, 5], [10, 7]] },
+  { id: 'maj7', suffix: 'maj7', iv: [[0, 1], [4, 3], [7, 5], [11, 7]] },
+  { id: 'min7', suffix: 'm7',   iv: [[0, 1], [3, 3], [7, 5], [10, 7]] },
+];
+// Flat names everywhere, except minor chords on Db / Gb / Ab, which would need double flats (Dbm = Db Fb Ab).
+const SHARP_MINOR = { Db: 'C#', Gb: 'F#', Ab: 'G#' };
+const ALIAS = { Db: 'C#', Eb: 'D#', Gb: 'F#', Ab: 'G#', Bb: 'A#', 'C#': 'Db', 'D#': 'Eb', 'F#': 'Gb', 'G#': 'Ab', 'A#': 'Bb' };
+
+// Guitar voicings, low E → high e. x = muted, trailing * = drawn as a barre.
+const SHAPES = {
+  A: 'x02220', Am: 'x02210', A7: 'x02020', Amaj7: 'x02120', Am7: 'x02010',
+  Bb: 'x13331*', Bbm: 'x13321*', Bb7: 'x13131*', Bbmaj7: 'x13231*', Bbm7: 'x13121*',
+  B: 'xx4442', Bm: 'xx4432', B7: 'x21202', Bmaj7: 'x24342*', Bm7: 'x20202',
+  C: 'x32010', Cm: 'xx5543', C7: 'x32310', Cmaj7: 'x32000', Cm7: 'x35343*',
+  Db: 'x46664*', 'C#m': 'x46654*', Db7: 'x46464*', Dbmaj7: 'x46564*', 'C#m7': 'x46454*',
+  D: 'xx0232', Dm: 'xx0231', D7: 'xx0212', Dmaj7: 'xx0222', Dm7: 'xx0211',
+  Eb: 'x68886*', Ebm: 'x68876*', Eb7: 'x68686*', Ebmaj7: 'x68786*', Ebm7: 'x68676*',
+  E: '022100', Em: '022000', E7: '020100', Emaj7: '021100', Em7: '020000',
+  F: 'xx3211', Fm: 'x33111', F7: '131211', Fmaj7: 'xx3210', Fm7: '131111*',
+  Gb: '244322*', 'F#m': '244222*', Gb7: '242322*', Gbmaj7: '243322*', 'F#m7': '242222*',
+  G: '320003', Gm: 'x55333', G7: '320001', Gmaj7: '320002', Gm7: '353333*',
+  Ab: '466544*', 'G#m': '466444*', Ab7: '464544*', Abmaj7: '465544*', 'G#m7': '464444*',
+};
+
+const PCN = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }, LET = 'CDEFGAB';
+const pcOf = n => (PCN[n[0]] + [...n.slice(1)].reduce((a, c) => a + (c === '#' ? 1 : c === 'b' ? -1 : 0), 0) + 12) % 12;
+function spell(root, semis, deg) {
+  const letter = LET[(LET.indexOf(root[0]) + deg - 1) % 7];
+  const d = ((pcOf(root) + semis - PCN[letter]) % 12 + 18) % 12 - 6;
+  return letter + (d > 0 ? '#'.repeat(d) : 'b'.repeat(-d));
+}
+function makeChord(root, ti) {
+  const t = TYPES[ti], rn = (ti === 1 || ti === 4) && SHARP_MINOR[root] ? SHARP_MINOR[root] : root;
+  const name = rn + t.suffix, names = t.iv.map(([sm, dg]) => spell(rn, sm, dg));
   // Piano: root position, ascending from the root inside the C3–B4 keyboard.
-  const PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
-  const pc = n => (PC[n[0]] + (n[1] === '#' ? 1 : n[1] === 'b' ? -1 : 0) + 12) % 12;
   let last = 47;
-  const midis = names.map(n => { let m = 48 + pc(n); while (m <= last) m += 12; last = m; return m; });
-  return { name, notes, names, shape, alt, midis };
-});
+  const midis = names.map(n => { let m = 48 + pcOf(n); while (m <= last) m += 12; last = m; return m; });
+  const raw = SHAPES[name], shape = raw.replace('*', '');
+  const fr = [...shape].map(c => c === 'x' ? 0 : +c).filter(f => f > 0);
+  const base = Math.max(...fr) > 5 ? Math.min(...fr) : 1;
+  return {
+    name, names, midis, shape, barre: raw.endsWith('*'), notes: names.join(' '),
+    alias: ALIAS[rn] ? ALIAS[rn] + t.suffix : '',
+    ord: ROOTS.indexOf(root) * 5 + ti,
+    // maj7 / m7 shapes that sit above the 3rd fret are left out while only guitar is active
+    hard: ti >= 3 && base >= 4,
+  };
+}
+// The first 21 keep the original order (and so the saved progress): A–G × major / minor / 7.
+const BASIC_ROOTS = ['A', 'B', 'C', 'D', 'E', 'F', 'G'], SPECS = [];
+BASIC_ROOTS.forEach(r => [0, 1, 2].forEach(t => SPECS.push([r, t])));
+ROOTS.forEach(r => TYPES.forEach((_, t) => { if (!(BASIC_ROOTS.includes(r) && t < 3)) SPECS.push([r, t]); }));
+const CHORDS = SPECS.map(([r, t], id) => ({ ...makeChord(r, t), id, basic: id < 21 }));
+// Alternative guitar fingerings
+CHORDS.find(c => c.name === 'E7').alt = { shape: '022130' };
+CHORDS.find(c => c.name === 'F').alt = { shape: '133211', barre: [1, 0, 5] };
+
 const OPEN = [40, 45, 50, 55, 59, 64]; // E2 A2 D3 G3 B3 E4
 // The guitar fingering currently selected for a chord (standard or alt).
-const gtr = i => (CHORDS[i].alt && S.alt.has(i)) ? CHORDS[i].alt : { shape: CHORDS[i].shape };
+const gtr = i => { const c = CHORDS[i]; return (c.alt && S.alt.has(i)) ? c.alt : { shape: c.shape, barre: c.barre }; };
+// Chords on screen right now, in display order.
+function visible() {
+  let l = CHORDS.filter(c => S.set === 'all' || c.basic);
+  if (S.guitar && !S.piano) l = l.filter(c => !c.hard);
+  if (S.set === 'all') l.sort((a, b) => a.ord - b.ord);
+  return l.map(c => c.id);
+}
 
 /* =====================================================================
    State (persisted)
@@ -284,6 +365,7 @@ const store = {
 };
 const S = {
   view: store.get('view', 'all'),
+  set: store.get('set', 'basic'),   // 'basic' (21) or 'all' (60)
   guitar: store.get('guitar', true),
   piano: store.get('piano', true),
   show: store.get('show', true),
@@ -295,7 +377,7 @@ const S = {
   deck: [], pos: 0, revealed: false,
 };
 const save = () => {
-  for (const k of ['view', 'guitar', 'piano', 'show', 'shuffle', 'skipKnown']) store.set(k, S[k]);
+  for (const k of ['view', 'set', 'guitar', 'piano', 'show', 'shuffle', 'skipKnown']) store.set(k, S[k]);
   store.set('known', [...S.known]);
   store.set('alt', [...S.alt]);
 };
@@ -389,19 +471,29 @@ function playPiano(ch) {
    ===================================================================== */
 function guitarSVG(g, show) {
   const X = i => 18 + i * 16.8, top = 30, fh = 22;
+  const fr = [...g.shape].map(c => c === 'x' ? -1 : +c), fretted = fr.filter(f => f > 0);
+  // Voicings higher up the neck are drawn from their lowest fret, with a "4fr" marker.
+  const base = Math.max(...fretted) > 5 ? Math.min(...fretted) : 1;
+  const row = f => top + (f - base + 0.5) * fh;
+  let barre = Array.isArray(g.barre) ? g.barre : null;
+  if (g.barre === true) {
+    const m = Math.min(...fretted), ix = fr.flatMap((f, i) => f === m ? [i] : []);
+    if (ix.length > 1) barre = [m, ix[0], ix[ix.length - 1]];
+  }
   let s = `<svg class="gtr" viewBox="0 0 120 146" aria-hidden="true">`;
   for (let f = 1; f <= 5; f++) s += `<line class="ln" x1="18" x2="102" y1="${top + f * fh}" y2="${top + f * fh}"/>`;
   for (let i = 0; i < 6; i++) s += `<line class="ln" x1="${X(i)}" x2="${X(i)}" y1="${top}" y2="${top + 5 * fh}"/>`;
-  s += `<line class="nut" x1="18" x2="102" y1="${top}" y2="${top}"/>`;
-  if (show && g.barre) {
-    const [fr, a, b] = g.barre;
-    s += `<rect class="dot" x="${X(a) - 6.8}" y="${top + (fr - 0.5) * fh - 6.8}" width="${X(b) - X(a) + 13.6}" height="13.6" rx="6.8"/>`;
+  s += `<line class="${base > 1 ? 'ln' : 'nut'}" x1="18" x2="102" y1="${top}" y2="${top}"/>`;
+  if (base > 1) s += `<text class="fr" x="0" y="${top + fh / 2 + 3.5}">${base}fr</text>`;
+  if (show && barre) {
+    const [f, a, b] = barre;
+    s += `<rect class="dot" x="${X(a) - 6.8}" y="${row(f) - 6.8}" width="${X(b) - X(a) + 13.6}" height="13.6" rx="6.8"/>`;
   }
-  if (show) [...g.shape].forEach((fr, i) => {
+  if (show) fr.forEach((f, i) => {
     const x = X(i);
-    if (fr === 'x') s += `<path class="mute" d="M${x - 4.5} 9.5l9 9M${x + 4.5} 9.5l-9 9"/>`;
-    else if (fr === '0') s += `<circle class="open" cx="${x}" cy="14" r="5"/>`;
-    else s += `<circle class="dot" cx="${x}" cy="${top + (fr - 0.5) * fh}" r="6.8"/>`;
+    if (f < 0) s += `<path class="mute" d="M${x - 4.5} 9.5l9 9M${x + 4.5} 9.5l-9 9"/>`;
+    else if (f === 0) s += `<circle class="open" cx="${x}" cy="14" r="5"/>`;
+    else s += `<circle class="dot" cx="${x}" cy="${row(f)}" r="6.8"/>`;
   });
   return s + `</svg>`;
 }
@@ -439,39 +531,44 @@ function cardInner(i) {
   const ch = CHORDS[i], show = S.show || S.peeked.has(i);
   return `
     <button class="play meta" data-play="auto" aria-label="Play ${ch.name}">
-      <span class="name">${ch.name}${S.known.has(i) ? '<i class="known-dot" title="Marked as known"></i>' : ''}</span>
+      <span class="name">${ch.name}${ch.alias ? `<i class="alias" title="Same chord, other name">${ch.alias}</i>` : ''}${S.known.has(i) ? '<i class="known-dot" title="Marked as known"></i>' : ''}</span>
       <span class="notes">${show ? ch.notes : ''}</span>
     </button>
-    ${S.guitar ? `<button class="play g" data-play="guitar" aria-label="Play ${ch.name} on guitar">${guitarSVG(gtr(i), show)}</button>` : ''}
-    ${S.piano ? `<button class="play p" data-play="piano" aria-label="Play ${ch.name} on piano">${pianoSVG(ch, show, false)}</button>` : ''}
+    <div class="dg">
+      ${S.guitar ? `<button class="play g" data-play="guitar" aria-label="Play ${ch.name} on guitar">${guitarSVG(gtr(i), show)}</button>` : ''}
+      ${S.piano ? `<button class="play p" data-play="piano" aria-label="Play ${ch.name} on piano">${pianoSVG(ch, show, false)}</button>` : ''}
+    </div>
     ${altBtn(i, 'Alt')}`;
 }
 function renderAll() {
-  const both = S.guitar && S.piano;
+  const both = S.guitar && S.piano, ids = visible();
+  const skipped = S.set === 'all' && !both ? CHORDS.length - ids.length : 0;
   app.innerHTML = `
     <p class="hint">${both ? 'Click a fretboard to hear the guitar, a keyboard to hear the piano.' : 'Click a chord to hear it.'}
-      ${S.show ? '' : ' Fingering is hidden — click a chord to hear it and check yourself.'}</p>
-    <div class="grid">${CHORDS.map((_, i) => `<div class="card" data-i="${i}">${cardInner(i)}</div>`).join('')}</div>`;
+      ${S.show ? '' : ' Fingering is hidden — click a chord to hear it and check yourself.'}
+      ${S.set === 'all' ? ' A small “C#” next to a name is the other name of the same chord.' : ''}
+      ${skipped ? ` ${skipped} maj7 / m7 chords that need a barre above the 3rd fret are left out while only guitar is on.` : ''}</p>
+    <div class="grid${S.set === 'all' ? ' five' : ''}">${ids.map(i => `<div class="card" data-i="${i}">${cardInner(i)}</div>`).join('')}</div>`;
 }
 
 function buildDeck(keep) {
-  let d = CHORDS.map((_, i) => i).filter(i => !(S.skipKnown && S.known.has(i)));
+  let d = visible().filter(i => !(S.skipKnown && S.known.has(i)));
   if (S.shuffle) for (let i = d.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [d[i], d[j]] = [d[j], d[i]]; }
   S.deck = d;
   const at = d.indexOf(keep);
   S.pos = at >= 0 ? at : Math.min(S.pos, Math.max(0, d.length - 1));
 }
 function renderTrainer() {
-  const n = S.deck.length;
+  const n = S.deck.length, vis = visible(), nKnown = vis.filter(i => S.known.has(i)).length;
   const opts = `
     <div class="opts">
       <label class="switch"><input type="checkbox" id="cbShuffle" ${S.shuffle ? 'checked' : ''}><span class="track"></span>Shuffle</label>
       <label class="switch"><input type="checkbox" id="cbSkip" ${S.skipKnown ? 'checked' : ''}><span class="track"></span>Skip known</label>
-      <span>${S.known.size} / ${CHORDS.length} known</span>
+      <span>${nKnown} / ${vis.length} known</span>
       ${S.known.size ? '<button class="link" id="resetKnown">Reset</button>' : ''}
     </div>`;
   if (!n) {
-    app.innerHTML = `<div class="trainer"><div class="flash empty"><h2>All ${CHORDS.length} chords known</h2>
+    app.innerHTML = `<div class="trainer"><div class="flash empty"><h2>All ${vis.length} chords known</h2>
       <p>Nothing left in the deck. Reset your progress or turn off “Skip known” to keep practising.</p></div>${opts}</div>`;
     return;
   }
@@ -482,6 +579,7 @@ function renderTrainer() {
       <div class="flash" data-i="${i}">
         <div class="badge">${S.known.has(i) ? '● Known' : ''}</div>
         <div class="name">${ch.name}</div>
+        ${ch.alias ? `<div class="aka">also written ${ch.alias}</div>` : ''}
         <div class="notes">${show ? ch.notes : '· · ·'}</div>
         ${altBtn(i, 'Alt guitar fingering')}
         <div class="diagrams">
@@ -507,6 +605,9 @@ function render() {
   document.body.classList.toggle('single', !(S.guitar && S.piano));
   $('vAll').setAttribute('aria-pressed', S.view === 'all');
   $('vTrain').setAttribute('aria-pressed', S.view === 'train');
+  $('sBasic').setAttribute('aria-pressed', S.set === 'basic');
+  $('sAll').setAttribute('aria-pressed', S.set === 'all');
+  $('brandSub').textContent = S.set === 'all' ? 'all 12 keys' : '21 basic chords';
   $('cbG').checked = S.guitar; $('chipG').classList.toggle('on', S.guitar);
   $('cbP').checked = S.piano; $('chipP').classList.toggle('on', S.piano);
   $('cbShow').checked = S.show;
@@ -575,8 +676,12 @@ app.addEventListener('change', e => {
 $('vAll').onclick = () => { S.view = 'all'; render(); };
 $('vTrain').onclick = () => { S.view = 'train'; S.revealed = false; buildDeck(S.deck[S.pos]); render(); };
 // At least one instrument always stays on: unchecking the last one switches to the other.
-$('cbG').onchange = e => { S.guitar = e.target.checked; if (!S.guitar) S.piano = true; render(); };
-$('cbP').onchange = e => { S.piano = e.target.checked; if (!S.piano) S.guitar = true; render(); };
+const refreshDeck = () => { S.revealed = false; buildDeck(S.deck[S.pos]); };
+$('cbG').onchange = e => { S.guitar = e.target.checked; if (!S.guitar) S.piano = true; refreshDeck(); render(); };
+$('cbP').onchange = e => { S.piano = e.target.checked; if (!S.piano) S.guitar = true; refreshDeck(); render(); };
+const setSet = v => { S.set = v; S.peeked.clear(); refreshDeck(); render(); };
+$('sBasic').onclick = () => setSet('basic');
+$('sAll').onclick = () => setSet('all');
 $('cbShow').onchange = e => { S.show = e.target.checked; S.peeked.clear(); S.revealed = false; render(); };
 $('themeBtn').onclick = () => {
   const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
