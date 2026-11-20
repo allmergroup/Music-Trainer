@@ -257,7 +257,7 @@
 
     <div class="seg" role="group" aria-label="Chord set">
       <button id="sBasic" aria-pressed="true">Basic 21</button>
-      <button id="sAll" aria-pressed="false">Expanded</button>
+      <button id="sAll" aria-pressed="false">Expanded 60</button>
     </div>
 
     <div class="chips" role="group" aria-label="Instruments">
@@ -607,6 +607,7 @@ function render() {
   $('vTrain').setAttribute('aria-pressed', S.view === 'train');
   $('sBasic').setAttribute('aria-pressed', S.set === 'basic');
   $('sAll').setAttribute('aria-pressed', S.set === 'all');
+  $('sAll').textContent = `Expanded ${CHORDS.filter(c => S.piano || !c.hard).length}`;
   $('brandSub').textContent = S.set === 'all' ? 'all 12 keys' : '21 basic chords';
   $('cbG').checked = S.guitar; $('chipG').classList.toggle('on', S.guitar);
   $('cbP').checked = S.piano; $('chipP').classList.toggle('on', S.piano);
